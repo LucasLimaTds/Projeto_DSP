@@ -1,61 +1,128 @@
-% Anotações e Ideias
-% - Algoritmo NLMS (Normalized Least Mean Squares).
+clear;clc;
 
-% Exemplo inicial com a música e geração de ruído
-[x, fs] = audioread("musica.wav");
+%% Configurações Iniciais
+frequencia_amostragem = 44100;  % Frequência padrão para áudio
+tamanho_frame = 512;            % Quantidade de amostras em um pacote
+qnt_coeficientes_filtro = 256;  % Tamanho do Filtro LMS (N)
+passo_adaptacao = 0.005;        % Velocidade de convergência (mu)
 
-% Gerando um ruído com a mesma duração da música
-ruido = 0.1 * randn(length(x), 1); 
+% Entrada de áudio
+entrada_audio_mic = audioDeviceReader('SampleRate', ...
+                                    frequencia_amostragem, ...
+                                    'SamplesPerFrame', ...
+                                    tamanho_frame);
+% Saída de áudio
+saida_audio = audioDeviceWriter('SampleRate', frequencia_amostragem);
 
-% Calculando o RMS de cada sinal (sqrt(mean(sinal.^2)))
-rmsMusica = rms(x);
-rmsRuido = rms(ruido);
+%% Configuração do Osciloscópio (TimeScope)
+% Cria uma interface otimizada para ver os sinais em tempo real
+scope = timescope('SampleRate', frequencia_amostragem, ...
+                  'TimeSpan', 2, ...                  % Mostra 2 segundos de histórico
+                  'YLimits', [-1.5 1.5], ...          % Limites do eixo Y (amplitude)
+                  'NumInputPorts', 2, ...             % Duas entradas (Mic e Saída)
+                  'LayoutDimensions', [2 1], ...      % Duas linhas, uma coluna
+                  'Title', 'Controle Automático de Ganho em Tempo Real');
 
-% Exibindo os valores no Console
-fprintf('--- Resultados de RMS ---\n');
-fprintf('RMS da Música: %.4f\n', rmsMusica);
-fprintf('RMS do Ruído:  %.4f\n', rmsRuido);
+scope.ActiveDisplay = 1; scope.YLabel = 'Microfone (Ruído + Eco)';
+scope.ActiveDisplay = 2; scope.YLabel = 'Alerta com Ganho Ajustado';
 
-% 5. Mostrando os sinais e seus níveis médios (RMS) no gráfico
-t = (0:length(x)-1) / fs;
+show(scope);
 
-figure;
+%% Preparando o sinal da música
+[audio_musica, frequencia_amostragem_musica] = audioread('musica.wav');             
+% Converter para áudio mono
+referencia_musica = resample(audio_musica(:,1), frequencia_amostragem, frequencia_amostragem_musica);
+% A função resample, altera a taxa de amostragem da música para se adequar
+% com a frequencia de amosragem definida inicialmente.
+% audio_musica(:,1) pega apenas o canal esquerdo, tornando o audio mono.
 
-% Sinal da Música
-subplot(2,1,1);
-plot(t, x, 'b');
-hold on;
-yline(rmsMusica, 'r', 'LineWidth', 2); % Linha horizontal no nível RMS
-yline(-rmsMusica, 'r', 'LineWidth', 2);
-title(['Música Original (RMS: ', num2str(rmsMusica, 3), ')']);
-ylabel('Amplitude');
-legend('Sinal', 'Nível RMS');
-grid on;
+total_amostras_musica = length(referencia_musica);
+ponteiro_leitura = 1;       % Ponto da amostra atual na qual a leitura deve começar
 
-% Sinal do Ruído
-subplot(2,1,2);
-plot(t, ruido, 'k');
-hold on;
-yline(rmsRuido, 'r', 'LineWidth', 2);
-yline(-rmsRuido, 'r', 'LineWidth', 2);
-title(['Ruído Gerado (RMS: ', num2str(rmsRuido, 3), ')']);
-xlabel('Tempo (segundos)');
-ylabel('Amplitude');
-legend('Sinal', 'Nível RMS');
-grid on;
+%% Configurando o filtro LMS
+w = zeros(qnt_coeficientes_filtro, 1);              % Vetor de pesos do filtro. Inicialmente zero
+buffer_entrada = zeros(qnt_coeficientes_filtro, 1); % Buffer de estado. Guarda as últimas N amostras do sinal 
 
-% Tocando a musica com o ruido sem o ganho aplicado
-mix = x+ruido;
-sound(mix, fs);
-pause(length(mix)/fs + 0.5);
+ganho_atual = 1.0;
+suavizacao_do_ganho = 0.05;
+limite_silencio_rms = 0.02; % valor em que o ruído é considerado silêncio
+ganho_maximo = 5.0;
 
-% Tocando a musica com o ruido e o ganho aplicado
-ganho = (rmsRuido/rmsMusica) * 2;
-x_alto = x*ganho;
-mix = x_alto+ruido;
-mix = mix/max(abs(mix));
+fprintf("Sistema iniciado. Fale no microfone...");
 
-sound(mix, fs);
+%% Processamento
 
+try
+    while isVisible(scope)
+        % Ler o sinal de entrada do microfone
+        sinal_entrada = entrada_audio_mic();
 
+        % Obter o próximo frame da música
+        % Verificar se tem amostras suficientes para ler um frame completo
+        if ponteiro_leitura + tamanho_frame - 1 <= total_amostras_musica
+            % Obter o pedaço correspondente da posição atual até o tamanho
+            % do frame
+            frame_musica = referencia_musica(ponteiro_leitura : ponteiro_leitura + tamanho_frame - 1);
+            % Atualiza o ponteiro para a próxima posição
+            ponteiro_leitura = ponteiro_leitura + tamanho_frame;
+        else
+            % Verifica as amostras restantes e faz um zero padding no frame
+            amostras_restantes = referencia_musica(ponteiro_leitura:end);
+            qnt_zeros_preenchimento = tamanho_frame - length(amostras_restantes);
+            frame_musica = [amostras_restantes; zeros(qnt_zeros_preenchimento, 1)];
+            
+            % Reinicia o ponteiro de posição
+            ponteiro_leitura = 1;
+        end
 
+        % Aplicar o ganho calculado no ciclo anterior
+        sinal_saida_ajustado = frame_musica * ganho_atual;
+        frame_erro_acg = zeros(tamanho_frame, 1);
+
+        %% Aplicar o filtro LMS
+        for n = 1:tamanho_frame
+            % O buffer recebe o frame atual e descarta a anterior (fila)
+            buffer_entrada = [sinal_saida_ajustado(n); buffer_entrada(1:end-1)];
+            
+            % Estimar o eco
+            estimativa_eco = buffer_entrada' * w;
+            
+            % Calcular o erro
+            erro_atual = sinal_entrada(n) - estimativa_eco;
+            frame_erro_acg = erro_atual;
+            
+            % Ajustar os pesos do filtro para o próximo ciclo
+            w = w + passo_adaptacao * erro_atual * buffer_entrada;
+        end
+
+        %% Calcular o ACG
+        rms_ruido_ambiente = rms(frame_erro_acg);
+        novo_ganho = 1.0 + (rms_ruido_ambiente / limite_silencio_rms);
+        
+        % limitar o novo ganho
+        if novo_ganho > ganho_maximo
+            novo_ganho = ganho_maximo;
+        end
+        
+        % Filtro passa-baixas (suavização)
+        ganho_atual = ganho_atual + suavizacao_do_ganho * (novo_ganho - ganho_atual);
+
+        %% Saída
+        saida_audio(sinal_saida_ajustado);
+        scope(sinal_entrada, sinal_saida_ajustado);
+        
+        drawnow limitrate; % Deixa o audio mais fluido
+    end
+catch exception
+    release(entrada_audio_mic);
+    release(saida_audio);
+    release(scope);
+    fprintf("Ocorreu um erro.");
+    rethrow(exception);
+end
+
+%% Liberando as variáveis contínuas
+release(entrada_audio_mic);
+release(saida_audio);
+release(scope);
+fprintf("Encerrado.");
