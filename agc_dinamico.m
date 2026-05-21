@@ -77,7 +77,7 @@ try
 
         % Aplicar o ganho calculado no ciclo anterior
         sinal_saida_ajustado = frame_musica * ganho_atual;
-        frame_erro_acg = zeros(tamanho_frame, 1);
+        frame_ruido_ambiente = zeros(tamanho_frame, 1);
 
         %% Aplicar o filtro LMS
         for n = 1:tamanho_frame
@@ -89,14 +89,14 @@ try
             
             % Calcular o erro
             erro_atual = sinal_entrada(n) - estimativa_eco;
-            frame_erro_acg = erro_atual;
+            frame_ruido_ambiente(n) = erro_atual;
             
             % Ajustar os pesos do filtro para o próximo ciclo
             w = w + passo_adaptacao * erro_atual * buffer_entrada;
         end
 
         %% Calcular o ACG
-        rms_ruido_ambiente = rms(frame_erro_acg);
+        rms_ruido_ambiente = rms(frame_ruido_ambiente);
         novo_ganho = 1.0 + (rms_ruido_ambiente / limite_silencio_rms);
         
         % limitar o novo ganho
