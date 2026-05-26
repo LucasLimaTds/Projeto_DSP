@@ -4,7 +4,7 @@ clear; clc;
 frequencia_amostragem = 44100;  
 tamanho_frame = 512;            
 qnt_coeficientes_filtro = 64;   
-passo_adaptacao = 0.01;         
+passo_adaptacao = 0.0001;         
 
 %% Configuração do Osciloscópio (TimeScope)
 scope = timescope('SampleRate', frequencia_amostragem, ...
@@ -25,7 +25,7 @@ show(scope);
 %% Geração dos Sinais 
 
 % musica
-[audio, fs] = audioread("musica.wav");
+[audio, fs] = audioread("guitar_town.mp3");
 audio_mono = audio(:, 1);
 
 audio_desejado = resample(audio_mono, frequencia_amostragem, fs);
