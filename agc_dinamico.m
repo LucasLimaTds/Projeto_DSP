@@ -3,8 +3,8 @@ clear;clc;
 %% Configurações Iniciais
 frequencia_amostragem = 44100;  % Frequência padrão para áudio
 tamanho_frame = 512;            % Quantidade de amostras em um pacote
-qnt_coeficientes_filtro = 256;  % Tamanho do Filtro LMS (N)
-passo_adaptacao = 0.005;        % Velocidade de convergência (mu)
+qnt_coeficientes_filtro = 512;  % Tamanho do Filtro LMS (N)
+passo_adaptacao = 0.001;        % Velocidade de convergência (mu)
 
 % Entrada de áudio
 entrada_audio_mic = audioDeviceReader('SampleRate', ...
@@ -18,7 +18,7 @@ saida_audio = audioDeviceWriter('SampleRate', frequencia_amostragem);
 % Cria uma interface otimizada para ver os sinais em tempo real
 scope = timescope('SampleRate', frequencia_amostragem, ...
                   'TimeSpan', 2, ...                  % Mostra 2 segundos de histórico
-                  'YLimits', [-1.5 1.5], ...          % Limites do eixo Y (amplitude)
+                  'YLimits', [-5 5], ...          % Limites do eixo Y (amplitude)
                   'NumInputPorts', 2, ...             % Duas entradas (Mic e Saída)
                   'LayoutDimensions', [2 1], ...      % Duas linhas, uma coluna
                   'Title', 'Controle Automático de Ganho em Tempo Real');
@@ -47,6 +47,11 @@ ganho_atual = 1.0;
 suavizacao_do_ganho = 0.05;
 limite_silencio_rms = 0.02; % valor em que o ruído é considerado silêncio
 ganho_maximo = 5.0;
+
+
+historico_entrada = [];
+historico_saida_ajustada = [];
+historico_ruido_isolado = [];
 
 fprintf("Sistema iniciado. Fale no microfone...");
 
@@ -91,8 +96,16 @@ try
             erro_atual = sinal_entrada(n) - estimativa_eco;
             frame_ruido_ambiente(n) = erro_atual;
             
+            %% LMS:
             % Ajustar os pesos do filtro para o próximo ciclo
-            w = w + passo_adaptacao * erro_atual * buffer_entrada;
+            % w = w + passo_adaptacao * erro_atual * buffer_entrada;
+            
+            %% NLMS:
+            energia_buffer = buffer_entrada' * buffer_entrada;
+            epsilon = 1e-6; % evita divisao por 0
+            w = w + (passo_adaptacao / (energia_buffer + epsilon)) * erro_atual * buffer_entrada;
+
+            
         end
 
         %% Calcular o ACG
@@ -112,6 +125,10 @@ try
         scope(sinal_entrada, sinal_saida_ajustado);
         
         drawnow limitrate; % Deixa o audio mais fluido
+
+        historico_entrada = [historico_entrada; sinal_entrada];
+        historico_saida_ajustada = [historico_saida_ajustada; sinal_saida_ajustado];
+        historico_ruido_isolado = [historico_ruido_isolado; frame_ruido_ambiente];
     end
 catch exception
     release(entrada_audio_mic);
@@ -126,3 +143,26 @@ release(entrada_audio_mic);
 release(saida_audio);
 release(scope);
 fprintf("Encerrado.");
+
+figure('Name', 'Análise Final dos Sinais', 'NumberTitle', 'off', 'WindowState', 'maximized');
+
+% Gráfico 1: O que o microfone ouviu (O Caos)
+subplot(3, 1, 1);
+plot(historico_entrada, 'y'); % 'y' plota em amarelo
+title('1. Entrada Inicial (Microfone: Alerta + Ruído do Ambiente)');
+xlabel('Amostras'); ylabel('Amplitude');
+grid on;
+
+% Gráfico 2: O que o LMS isolou (O Ruído Estimado)
+subplot(3, 1, 2);
+plot(historico_ruido_isolado, 'r'); % 'r' plota em vermelho
+title('2. Ruído Isolado pelo LMS (Sinal de Erro)');
+xlabel('Amostras'); ylabel('Amplitude');
+grid on;
+
+% Gráfico 3: O que foi para a caixa de som (O Alerta ajustado pelo AGC)
+subplot(3, 1, 3);
+plot(historico_saida_ajustada, 'b'); % 'b' plota em azul
+title('3. Saída Final (Alerta com Ganho Automático Aplicado)');
+xlabel('Amostras'); ylabel('Amplitude');
+grid on;
