@@ -4,7 +4,7 @@ clear;clc;
 frequencia_amostragem = 44100;  % Frequência padrão para áudio
 tamanho_frame = 512;            % Quantidade de amostras em um pacote
 qnt_coeficientes_filtro = 512;  % Tamanho do Filtro LMS (N)
-passo_adaptacao = 0.001;        % Velocidade de convergência (mu)
+passo_adaptacao = 0.01;        % Velocidade de convergência (mu)
 
 % Entrada de áudio
 entrada_audio_mic = audioDeviceReader('SampleRate', ...
@@ -18,7 +18,7 @@ saida_audio = audioDeviceWriter('SampleRate', frequencia_amostragem);
 % Cria uma interface otimizada para ver os sinais em tempo real
 scope = timescope('SampleRate', frequencia_amostragem, ...
                   'TimeSpan', 2, ...                  % Mostra 2 segundos de histórico
-                  'YLimits', [-5 5], ...          % Limites do eixo Y (amplitude)
+                  'YLimits', [-1.5 1.5], ...          % Limites do eixo Y (amplitude)
                   'NumInputPorts', 2, ...             % Duas entradas (Mic e Saída)
                   'LayoutDimensions', [2 1], ...      % Duas linhas, uma coluna
                   'Title', 'Controle Automático de Ganho em Tempo Real');
@@ -45,15 +45,21 @@ buffer_entrada = zeros(qnt_coeficientes_filtro, 1); % Buffer de estado. Guarda a
 
 ganho_atual = 1.0;
 suavizacao_do_ganho = 0.05;
-limite_silencio_rms = 0.02; % valor em que o ruído é considerado silêncio
+limite_silencio_rms = 0.01; % valor em que o ruído é considerado silêncio
 ganho_maximo = 5.0;
 
+epsilon = 1e-6; % evita divisao por 0 no NLMS
 
-historico_entrada = [];
-historico_saida_ajustada = [];
-historico_ruido_isolado = [];
+duracao_maxima = 60;
 
-fprintf("Sistema iniciado. Fale no microfone...");
+max_amostras = duracao_maxima * frequencia_amostragem;
+
+historico_entrada = zeros(max_amostras,1);
+historico_saida_ajustada = zeros(max_amostras,1);
+historico_ruido_isolado = zeros(max_amostras,1);
+indice = 1;
+
+fprintf("Sistema iniciado.");
 
 %% Processamento
 
@@ -102,13 +108,12 @@ try
             
             %% NLMS:
             energia_buffer = buffer_entrada' * buffer_entrada;
-            epsilon = 1e-6; % evita divisao por 0
             w = w + (passo_adaptacao / (energia_buffer + epsilon)) * erro_atual * buffer_entrada;
 
             
         end
 
-        %% Calcular o ACG
+        %% Calcular o novo ganho
         rms_ruido_ambiente = rms(frame_ruido_ambiente);
         novo_ganho = 1.0 + (rms_ruido_ambiente / limite_silencio_rms);
         
@@ -126,9 +131,17 @@ try
         
         drawnow limitrate; % Deixa o audio mais fluido
 
-        historico_entrada = [historico_entrada; sinal_entrada];
-        historico_saida_ajustada = [historico_saida_ajustada; sinal_saida_ajustado];
-        historico_ruido_isolado = [historico_ruido_isolado; frame_ruido_ambiente];
+        fim = indice + tamanho_frame - 1;
+
+        if fim <= max_amostras
+            historico_entrada(indice:fim) = sinal_entrada;
+            historico_saida_ajustada(indice:fim) = sinal_saida_ajustado;
+            historico_ruido_isolado(indice:fim) = frame_ruido_ambiente;
+        
+            indice = fim + 1;
+        else
+            indice = 1; % buffer circular
+        end
     end
 catch exception
     release(entrada_audio_mic);
@@ -146,23 +159,23 @@ fprintf("Encerrado.");
 
 figure('Name', 'Análise Final dos Sinais', 'NumberTitle', 'off', 'WindowState', 'maximized');
 
-% Gráfico 1: O que o microfone ouviu (O Caos)
+% Gráfico 1
 subplot(3, 1, 1);
 plot(historico_entrada, 'y'); % 'y' plota em amarelo
 title('1. Entrada Inicial (Microfone: Alerta + Ruído do Ambiente)');
 xlabel('Amostras'); ylabel('Amplitude');
 grid on;
 
-% Gráfico 2: O que o LMS isolou (O Ruído Estimado)
+% Gráfico 2
 subplot(3, 1, 2);
 plot(historico_ruido_isolado, 'r'); % 'r' plota em vermelho
-title('2. Ruído Isolado pelo LMS (Sinal de Erro)');
+title('2. Ruído Isolado pelo NLMS (Ruído Estimado)');
 xlabel('Amostras'); ylabel('Amplitude');
 grid on;
 
-% Gráfico 3: O que foi para a caixa de som (O Alerta ajustado pelo AGC)
+% Gráfico 3
 subplot(3, 1, 3);
 plot(historico_saida_ajustada, 'b'); % 'b' plota em azul
-title('3. Saída Final (Alerta com Ganho Automático Aplicado)');
+title('3. Saída Final (Música com Ganho Automático Aplicado)');
 xlabel('Amostras'); ylabel('Amplitude');
 grid on;

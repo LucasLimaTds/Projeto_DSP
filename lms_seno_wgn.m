@@ -3,8 +3,8 @@ clear; clc;
 %% Configurações Iniciais
 frequencia_amostragem = 44100;  
 tamanho_frame = 512;            
-qnt_coeficientes_filtro = 512;   
-passo_adaptacao = 0.001;         
+qnt_coeficientes_filtro = 64;   
+passo_adaptacao = 0.01;         
 
 %% Configuração do Osciloscópio (TimeScope)
 scope = timescope('SampleRate', frequencia_amostragem, ...
