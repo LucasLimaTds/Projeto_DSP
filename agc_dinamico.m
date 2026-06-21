@@ -29,7 +29,7 @@ scope.ActiveDisplay = 2; scope.YLabel = 'Alerta com Ganho Ajustado';
 show(scope);
 
 %% Preparando o sinal da música
-[audio_musica, frequencia_amostragem_musica] = audioread('Musicas\System-Of-A-Down-Toxicity.wav');             
+[audio_musica, frequencia_amostragem_musica] = audioread('Musicas\musica.wav');             
 % Converter para áudio mono
 referencia_musica = resample(audio_musica(:,1), frequencia_amostragem, frequencia_amostragem_musica);
 % A função resample, altera a taxa de amostragem da música para se adequar
