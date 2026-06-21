@@ -24,12 +24,12 @@ show(scope);
 
 %% Geração dos Sinais 
 % musica
-[audio, fs] = audioread("down_under.mp3");
+[audio, fs] = audioread("Musicas\down_under.mp3");
 audio_mono = audio(:, 1);
 audio_desejado = resample(audio_mono, frequencia_amostragem, fs);
 
 % musica ruido
-[audio_ruido, fs_ruido] = audioread("guitar_town.mp3");
+[audio_ruido, fs_ruido] = audioread("Musicas\guitar_town.mp3");
 audio_ruido_mono = audio_ruido(:, 1);
 audio_ruido = resample(audio_ruido_mono, frequencia_amostragem, fs_ruido);
 

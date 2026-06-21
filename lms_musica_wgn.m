@@ -25,7 +25,7 @@ show(scope);
 %% Geração dos Sinais 
 
 % musica
-[audio, fs] = audioread("guitar_town.mp3");
+[audio, fs] = audioread("musicas\guitar_town.mp3");
 audio_mono = audio(:, 1);
 
 audio_desejado = resample(audio_mono, frequencia_amostragem, fs);
