@@ -45,7 +45,7 @@ buffer_entrada = zeros(qnt_coeficientes_filtro, 1); % Buffer de estado. Guarda a
 
 ganho_atual = 1.0;
 suavizacao_do_ganho = 0.05;
-limite_silencio_rms = 0.01; % valor em que o ruído é considerado silêncio
+limite_silencio_rms = 0.04; % valor em que o ruído é considerado silêncio
 ganho_maximo = 5.0;
 
 epsilon = 1e-6; % evita divisao por 0 no NLMS
